@@ -5,6 +5,8 @@
 
 \usepackage{amsfonts}
 \usepackage{amsmath}
+\usepackage{amssymb}
+\DeclareMathOperator{\dom}{dom}
 \usepackage{graphicx}
 \usepackage{calc} % for \heightof in \tombstone
 
@@ -166,9 +168,13 @@
 \newcommand{\patp}[1]{\texttt{\textasciitilde#1}}
 \newcommand{\github}[1]{\texttt{@#1}}
 
+% Inline links to GitHub pull requests by number.
+\newcommand{\urbitpr}[1]{\href{https://github.com/urbit/urbit/pull/#1}{\texttt{urbit/urbit}~\##1}}
+\newcommand{\verepr}[1]{\href{https://github.com/urbit/vere/pull/#1}{\texttt{urbit/vere}~\##1}}
+
 % Turn off when producing release version.
 \usepackage{lineno}
-% \linenumbers
+\linenumbers
 
 % Bibliography management
 \usepackage[
@@ -234,6 +240,14 @@
 
 % Define a custom citation command for GitHub PRs
 \DeclareCiteCommand{\citetpr}
+  {\usebibmacro{prenote}}
+  {\usebibmacro{citeindex}%
+   \printtext[bibhyperref]{\printfield{usera}}}
+  {\multicitedelim}
+  {\usebibmacro{postnote}}
+
+% Inline (parenthetical) citation command for GitHub PRs
+\DeclareCiteCommand{\citepr}
   {\usebibmacro{prenote}}
   {\usebibmacro{citeindex}%
    \printtext[bibhyperref]{\printfield{usera}}}
