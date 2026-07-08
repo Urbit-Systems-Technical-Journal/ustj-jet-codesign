@@ -5,6 +5,7 @@
 \usepackage{makecell}
 \usepackage{booktabs}
 \usepackage{rotating}
+\usepackage{stmaryrd}
 
 \addbibresource{mss.bib}
 
@@ -41,6 +42,7 @@
 \thispagestyle{firststyle}
 
 \begin{abstract}
+Jets, or hand-written native equivalents of Nock formulas, carry a correctness contract that has never been formally stated with full precision.  We show that the na"{i}ve two-valued contract is unsound:  Nock's virtualization tower (\texttt{+mock}) makes deterministic crashes observable as values, so a jet that bails where its formula diverges is detectable by ordinary Hoon code.  We state the correct three-valued contract, survey four approaches to satisfying it, and develop the strongest---co-derivation of both the Nock formula and its jet from a common concatenative source---in detail:  a composition theorem reduces all proof obligations to a small closed set of leaf proofs plus three schema proofs.  We analyze deployment against the actual dispatch mechanism of a production runtime.
 \end{abstract}
 
 % We will adjust page numbering in final editing.
@@ -51,57 +53,57 @@
 
 \section{Introduction}
 
-The Nock combinator calculus frequently serves as an instruction set architecture for a virtual machine, but strict adherence to its formal requirements produced code that evaluates very slow relative to native machine operations.  (Infamously, there is no decrement, for instance.)  To address this, the Urbit runtime implements a system of \emph{jets},\footnote{Derived from ``jet-accelerated code''.} which are hand-written equivalents of Nock formulas in a low-level language.  Given a Nock formula $F$, a Nock subject $S$, and a function $f$ written in a target language $\mathcal{L}$, we require that the following contract hold:
+The Nock combinator calculus frequently serves as an instruction set architecture for a virtual machine, but strict adherence to its formal requirements produced code that evaluates very slow relative to native machine operations.  (Infamously, there is no decrement, for instance.)  To address this, the Urbit runtime implements a system of \emph{jets},\footnote{Derived from ``jet-accelerated code''.} which are hand-written equivalents of Nock formulas in a low-level language.  Given a Nock formula $F$, a Nock subject $S$, and a function $f$ written in a target language $\mathcal{L}$, we require that the following contract hold over all nouns $\mathcal{N}$:
 
 \begin{equation}\label{eqn:jet}
-\forall S \in \dom(F): *[S\; F] \simeq f_{\mathcal{L}}(S)
+\forall S \in \mathcal{N}: *[S\; F] \simeq f_{\mathcal{L}}(S)
 \end{equation}
 
 \noindent
-in which $\simeq$ denotes Kleene equality, with both sides defined and equal, or both sides undefined.  The jet system is a form of co-design wherein the Nock formula $F$ is the specification.  The target language $\mathcal{L}$ is typically C (Vere) or Rust (NockApp), but occasionally some other low-level language (such as Forth for the Trinitite experimental OS); one can also envision Wasm serving this role as the Urwasm project\footnote{\citet{Afonin2024}.} unfolds.  The function $f_{\mathcal{L}}$ is the implementation of the jet in $\mathcal{L}$.
+in which $\simeq$ denotes Kleene equality, with both sides defined and equal, or both sides undefined, in the three-value outcome set $\mathcal{N} \cup \{\bot_\text{det}, \Uparrow\}$ as defined in Equations~\ref{eqn:contract1}--\ref{eqn:contract3} below.  The jet system is a form of co-design wherein the Nock formula $F$ is the specification.  The target language $\mathcal{L}$ is typically C (Vere) or Rust (NockApp), but occasionally some other low-level language (such as Forth for the Trinitite experimental OS); one can also envision Wasm serving this role as the Urwasm project\footnote{\citet{Afonin2024}.} unfolds.  The function $f_{\mathcal{L}}$ is the implementation of the jet in $\mathcal{L}$.
 
-There is a taxonomy of bottoms (crashes) in the Urbit runtime which result from this contract:
+There is a taxonomy of bottoms (crashes) in a Nock runtime which result from this contract:
 
 \begin{enumerate}
-  \item  Deterministic crash, \texttt{\%exit}:  part of Nock \textsc{isa}'s definable behavior, e.g., a crash on an invalid subject; an axis into a noun; an increment of a cell; a failed assertion.  Virtualization (\texttt{+mock}, the virtual-Nock tower) turns an \texttt{\%exit} into a value: \texttt{[\%| trace]}.  Hoon code branches on it.  A deterministic crash is not ``no result'', as from the inside perspective of Nock it is a perfectly good result that happens to bottom.
-  \item  Nondeterministic crash, colloquially a \texttt{\%bail} but in practice \texttt{\%intr}, \texttt{\%meme}, etc.:  a crash that is not part of Nock \textsc{isa}'s definable behavior, e.g., a crash on an interrupt, memory exhaustion, or other nondeterministic event.  Virtualization (\texttt{+mock}) does not turn a nondeterministic crash into a value; the event itself fails.  From the inside perspective of Nock, a nondeterministic crash is simply ``no result''.  These live outside observable semantics.
+  \item  Deterministic crash, $\bot_\text{det}$, \texttt{\%exit}:  part of Nock \textsc{isa}'s definable behavior, e.g., a crash on an invalid subject; an axis into an atom; an increment of a cell; a failed assertion.  Virtualization (\texttt{+mock}, the virtual-Nock tower) turns an \texttt{\%exit} into a value: \texttt{[\%| trace]}.  Hoon code branches on it.  A deterministic crash is not ``no result'', as from the inside perspective of Nock it is a perfectly good result that happens to bottom.
+  \item  Nondeterministic crash, $\bot_\text{nondet}$, colloquially a \texttt{\%bail} but in practice \texttt{\%intr}, \texttt{\%meme}, etc.:  a crash that is not part of Nock \textsc{isa}'s definable behavior, e.g., a crash on an interrupt, memory exhaustion, or other nondeterministic event.  Virtualization (\texttt{+mock}) does not turn a nondeterministic crash into a value; the event itself fails.  From the inside perspective of Nock, a nondeterministic crash is simply ``no result''.  These live outside observable semantics.  This may be a response to a divergence such as an infinite loop $\Uparrow$.\footnote{This taxonomy is not merely notational:  NockVM's jet interface encodes it directly in its result type as \texttt{Deterministic(Mote::Exit, …)} and \texttt{NonDeterministic(Mote::Fail, …)}.}
 \end{enumerate}
 
 \noindent
-Divergence only occurs with nondeterministic crashes;\footnote{Here, ``divergence'' means non-termination or infinite loop; in Nock, the \texttt{*a} $\rightarrow$ \texttt{*a} condition.} if a jet bails where the Nock formula diverges, then under \texttt{+mock} the jetted path returns \texttt{[\%| trace]}, a value, whereas the unjetted path hangs forever.  This results in a subtle but significant observable semantic divergence between jetted and unjetted code, detectable by ordinary Hoon code.  The two bottoms are not interchangeable and virtualization reveals the distinction.  Thus we have a three-valued contract to satisfy the Kleene equality relation of Equation~\ref{eqn:jet}:
+Divergence can only be terminated with a nondeterministic crash;\footnote{Here, ``divergence'' means non-termination or infinite loop; in Nock, the \texttt{*a} $\rightarrow$ \texttt{*a} condition.} if a jet bails where the Nock formula diverges, then under \texttt{+mock} the jetted path returns \texttt{[\%| trace]}, a value, whereas the unjetted path hangs forever.  This results in a subtle but significant observable semantic divergence between jetted and unjetted code, detectable by ordinary Hoon code.  The two bottoms are not interchangeable and virtualization reveals the distinction.  Thus we have a three-valued contract to satisfy the Kleene equality relation of Equation~\ref{eqn:jet}:
 
 \begin{subequations}
   \begin{align}
     *[S\; F] = v \in \mathcal{N} \iff & f(S) = v \label{eqn:contract1} \\
-    *[S\; F] = \bot_\text{det} \iff & f(S) \text{ bottoms} \label{eqn:contract2} \\
-    *[S\; F] = \bot_\text{ndet} \;\Longrightarrow\; & f(S) \text{ bails or punts} \label{eqn:contract3}
+    *[S\; F] = \bot_\text{det} \iff & f(S) \text{ bails deterministically} \label{eqn:contract2} \\
+    *[S\; F] \text{ diverges} \;\Longrightarrow\; & f(S) \text{ bails or punts} \label{eqn:contract3}
   \end{align}
 \end{subequations}
 
 \noindent
-Outcomes range over $\mathcal{N} \cup \bot_\text{det} \cup \bot_\text{ndet}$, where $\mathcal{N}$ is the set of all nouns.\footnote{While many jet mismatches are value-level, some are bottom-level.  For instance, the jet for \texttt{+dec} in Vere was written in such a way that registration broke Nock semantics (\verepr{960}), as discovered by \patp{dozreg-toplud}.}  To wit, the three cases of the contract are as follows:
+Outcomes range over $\mathcal{N} \cup \{\bot_\text{det}, \Uparrow\}$, where $\mathcal{N}$ is the set of all nouns.\footnote{While many jet mismatches are value-level, some are bottom-level.  For instance, the jet for \texttt{+dec} in Vere was written in such a way that registration broke Nock semantics (\verepr{960}), as discovered by \patp{dozreg-toplud}.}  To wit, the three cases of the contract are as follows:
 
 \begin{enumerate}
   \item  Both sides are defined and equal (Equation~\ref{eqn:contract1}).
   \item  Both sides are undefined (deterministic crash), $\bot_\text{det}$ (Equation~\ref{eqn:contract2}).
-  \item  Both sides are undefined (nondeterministic crash), $\bot_\text{ndet}$ or the jet punts (Equation~\ref{eqn:contract3}).
+  \item  Both sides are undefined (nondeterministic crash); T=the spec side diverges ($\Uparrow$) while the implementation side diverges, bails nondeterministically $\bot_\text{nondet}$, or punts (Equation~\ref{eqn:contract3}).
 \end{enumerate}
 
 \noindent
-Punting describes the runtime refusing to evaluate the expression and instead falling back to the unjetted Nock path.  It is a universally sound escape path which is trivially present in all jets which enables the pipeline to not have to be total.\footnote{In Vere, punting is indicated by returning \texttt{u3\_none} while in NockVM it is indicated by \texttt{TODO}.}
+Punting describes the runtime refusing to evaluate the expression and instead falling back to the unjetted Nock path.  It is a universally sound escape path which is trivially present in all jets which enables the pipeline to not have to be total.\footnote{In Vere, punting is indicated by returning \texttt{u3\_none} while in NockVM it is indicated by \texttt{Err(JetErr::Punt)}.}
 
-In practice, divergence should be avoided at the source level rather than managed at the jet level; that is, much as how \texttt{+dec} guards on \texttt{0} to avoid a bottom, so should other code avoid divergence in practice.  However, it is possible for a jet to be written in such a way that it diverges where the Nock formula does not, and this stands as a violation of the contract.
+In practice, unnecessary divergence should be avoided at the source level rather than managed at the jet level; that is, much as how \texttt{+dec} guards on \texttt{0} to avoid a bottom, so should other code seek to avoid divergence in practice.  However, it is possible for a jet to be written in such a way that it diverges where the Nock formula does not, and this stands as a violation of the contract.
 
 At least four approaches to this contract are possible, each with its own tradeoffs.
 \begin{enumerate}
   \item  \textbf{Ad hoc}.  $f$ is written by hand and tested against $F$ on a finite input set.  Correspondence is claimed by generalization from the test results; that is, $f$ in Nock and $f_\mathcal{L}$ are formally independent.  This is the approach actually taken today by the two major Nock runtimes, Vere and NockVM.
-  \item  \textbf{Verification}.  $f$ is written by hand in a language $\mathcal{L}$ under a proof that it satisfies the contract.  A proof assistant (Coq, Lean, Isabelle) with formalized Nock semantics or a model checker, or something equivalent is used to produce $f_\mathcal{L}$ in a suitable $\mathcal{L}$ dialect or code discipline (e.g., \texttt{c3}).  KHoon\footnote{\citet{Ahl2023}.} and KNock\footnote{\citet{Hjort2023}.} exist and could serve as a basis for this approach, but no such proof has yet been produced.
+  \item  \textbf{Verification}.  $f$ is written by hand in a language $\mathcal{L}$ under a proof that it satisfies the contract.  A proof assistant (Coq, Lean, Isabelle) with formalized Nock semantics or a model checker, or something equivalent is used to produce $f_\mathcal{L}$ in a suitable $\mathcal{L}$ dialect or code discipline (e.g., \texttt{c3}).  KHoon\footnote{KHoon formalizes \textasciitilde 25\% of Hoon's runes and proves claims about kernel gates, our Class C below \citep{Ahl2023}.} and KNock\footnote{KNock is an executable Nock semantics in K with a working prover \citep{Hjort2023}).} exist and could serve as a basis for this approach, but no such proof has yet been produced and they currently only address the left-hand side of Equation~\ref{eqn:jet}.
   \item  \textbf{Direct derivation}.  $f$ is mechanically produced from $F$ by a verified compiler.  Correctness follows from compiler correctness; $f$ in Nock is the source from which $f_\mathcal{L}$ is programmatically derived.  No per-jet proof obligation is necessary.
-  \item  \textbf{Co-derivation}.  $F$ and $f_\mathcal{L}$ are both mechanically produced by a verified compiler from a common source language $\Lambda$.  Correctness follows from compiler correctness; $F$ in Nock correspondes to the source from which $f_\mathcal{L}$ is likewise programmatically derived.  No per-jet proof obligation is necessary.
+  \item  \textbf{Co-derivation}.  $F$ and $f_\mathcal{L}$ are both mechanically produced by a verified compiler from a common source language $\Lambda$.  Correctness follows from compiler correctness; $F$ in Nock corresponds to the source from which $f_\mathcal{L}$ is likewise programmatically derived.  No per-jet proof obligation is necessary.
 \end{enumerate}
 
 \noindent
-While Nock was in relative flux during its early development, the ad hoc approach was a reasonable choice for the pace of development.  However, jet mismatches are occasionally uncovered (\citepr{TODO}), and these have led to a tendentious layer of support for multiple versions of jets at different kelvin versions in the runtime.  Nock is sufficiently well-understood at this point that a more rigorous approach to jet correctness is now possible, and the verification, direct derivation, or co-derivation approaches are all worth considering.  Let us explore the tradeoffs of these approaches and their implications for Urbit development (see Table~\ref{tbl:tradeoffs}).
+While Nock was in relative flux during its early development, the ad hoc approach was a reasonable choice for the pace of development.  However, jet mismatches are occasionally uncovered (\verepr{960}), and these have led to a tendentious layer of support for multiple versions of jets at different kelvin versions in the runtime.  Nock is sufficiently well-understood at this point that a more rigorous approach to jet correctness is now possible, and the verification, direct derivation, or co-derivation approaches are all worth considering.  Let us explore the tradeoffs of these approaches and their implications for Urbit development (see Table~\ref{tbl:tradeoffs}).
 
 % HERE
 \begin{table}[ht]
@@ -132,8 +134,12 @@ For instance, extensive work by \patp{ponmep-litsem} on a Git interface for Urbi
 
 A formal verification of the jet's behavior against the Nock formula is possible, but it is a significant undertaking.  The verification approach requires a formalization of Nock semantics in a proof assistant or model checker, and then a formal proof that the jet implementation satisfies the contract.  This is a per-jet proof obligation, and it would also be strongest in cases in which the jet implementation closely corresponds to the Nock formula.  But jets exist because the implementation should not correspond precisely to the formula---the point is substituting a different, faster algorithm.  Thus verification effort must concentrate exactly where jets add value.
 
-KNock
-KHoon
+Two artifacts exist on which such a program could be built, both in
+the K framework and sharing a lineage through Runtime Verification.  \citet{Hjort2023} formalized Nock semantics in KNock, but KNock is not yet a verified compiler and it does not have a proof assistant interface at the time of writing.  \citet{Ahl2023} formalized a significant portion of Hoon semantics in the KHoon project, and the K Framework by Runtime Verification has a complete C semantics from its \textsc{kcc} lineage, so this possibility exists latent in our ecosystem.  However, K claims only speak to terminating rewrites, so clause 2b is only partially expressible and 2c not at all.  KHoon represents batteries as lists of Hoon expressions rather than compiled Nock formulas (which is flagged as a limitation in the thesis), so it cannot state battery identity, which will serve as the dispatch key in our subsequent development.  Thus while verification is possible, it is not yet practical.
+
+The labor profile of those proofs is instructive.  Proving a five-iteration summation loop required approximately twelve minutes of prover time in 2023; proving the \texttt{+dec} claim for arbitrary input required a hand-derived loop invariant, hand-specified simplification rules for sort conversions, and a \texttt{trusted} attribute to discharge a base case the prover could not close unaided---and a variant of the invariant that is provable in isolation fails when composed into the enclosing claim.  Each such invariant is per-loop, hence per-jet, human effort.  This is the constant factor behind the $\mathcal{O}(n)$ proof cost and the negative scaling entry in Table~\ref{tbl:tradeoffs}: the asymptotic count of proof obligations matters less than the fact that each obligation requires expert manual invention that does not transfer between jets and must be revisited at each kelvin revision.
+
+None of this argues that the verification approach is unsound; it argues that it is misallocated as a per-jet regime.  Its correct role, as we develop below, is as the discharge mechanism for a small closed trusted base: a KNock-style proof deployed at each Class~C leaf, once, rather than at every jet, indefinitely.  Verification is not refuted by our co-derivation development below, but contained by it.
 
 \section{Direct Derivation}
 
@@ -145,15 +151,15 @@ Another possibility is co-derivation of both the Nock \textsc{isa} gate and its 
 
 In fact, whitelisted optimizations (as mentioned in the direct derivation section) likewise points to per-pattern proofs.  A verified compiler that recognizes the decrement formula and substitutes native subtraction can be built atop a proof that the substitution is sound as a per-pattern obligation, effectively relocated into the compiler.  Therefore direct derivation with an associated whitelist and co-derivation converge on a similar architecture, a trusted base of proven algorithm substitutions, with other components composed on top, in some cases for free.
 
-We can construct a co-design table for a $\Lambda$ compiler that produces both Nock and a low-level language implementation.  We will produce a Forth implementation of the $\Lambda$ compiler.  Forth is well-suited as a source language for a Nock \textsc{isa} compiler because its stack-based semantics map naturally to a Nock evaluation model.
+We can construct a co-design table for a $\Lambda$ compiler that produces both Nock and a low-level language implementation.  We will produce a description of a $\Lambda$ compiler for a concatenative Forth source.  Forth is well-suited as a source language for a Nock \textsc{isa} compiler because its stack-based semantics map naturally to a Nock evaluation model.
 
-The subject \texttt{S} is a rightward-branching, null-terminated stack \texttt{S = [top rest]}.  Every Forth word denotes a function from stack to stack.  In each table, the Nock column is a formula $\phi$ with \texttt{*[S\; φ] = stack'}; the C column is a routine over the same layout in Vere \texttt{u3}-style tagged nouns.  Juxtaposition is the correspondence of Nock opcode \texttt{7} to C sequencing as a composition theorem.
+The subject \texttt{S} is a rightward-branching, null-terminated stack \texttt{S = [top rest]}.  We instantiate an example of a $\Lambda$ compiler that, in this case, produces Nock formulas $\phi$ with \texttt{*[S\; φ] = stack'} and C routines (as Vere \texttt{u3}-style tagged nouns).  The compiler is a right fold over the program, which is a sequence of Forth words.  Each word has a corresponding Nock formula and C routine, and the compiler produces a Nock formula and C routine for the entire program by folding over the sequence of words.  Juxtaposition is the correspondence of Nock opcode \texttt{7} to C sequencing as a composition theorem.
 
-The composition theorem is the key to the co-design problem.  Fix the noun domain $\mathcal{N}$ and one bottom $\bot$ covering both crash and divergence.  A word $\mathcal{w}$ denotes a partial function $\llbracket \mathcal{w} \rrbracket : \mathcal{N} \rightharpoonup \mathcal{N}$ on stack nouns.  Programs are the free monoid $\mathcal{W}^*$ over the word set.  We define two compilers as right folds:
+The composition theorem is the key to the co-design problem.  Fix the noun domain $\mathcal{N}$ and the three-valued outcome set $\mathcal{O} = \mathcal{N} \cup \{\bot_\text{det}, \Uparrow\}$ of Equations~\ref{eqn:contract1}--\ref{eqn:contract3}.  A word $w$ denotes a function $\llbracket w \rrbracket : \mathcal{N} \to \mathcal{O}$ on stack nouns.  Programs are the free monoid $\mathcal{W}^*$ over the word set.  We define two compilers as right folds:
 
 \begin{subequations} %\label{eqn:compilers}
   \begin{align}
-    N(\varepsilon) &= [0\ 1] \label{eqn:compiler_N1} \\
+    N(\varepsilon) &= \mathtt{[0\;1]} \label{eqn:compiler_N1} \\
     N(w \cdot p) &= [7\ \varphi_w\ N(p)] \label{eqn:compiler_N2} \\
     C(\varepsilon) &= \text{skip}  \label{eqn:compiler_C1} \\
     C(w \cdot p) &= c_w\,;\, C(p) \label{eqn:compiler_C2}
@@ -163,16 +169,76 @@ The composition theorem is the key to the co-design problem.  Fix the noun domai
 \noindent
 The theorem is supported by three contracts:
 \begin{enumerate}
-  \item  Leaf contract (per word, the table): $\forall S: *[S\ \varphi_w] \simeq c_w(S)$, where $\simeq$ is Kleene equality under the load/unload simulation.
-  \item  Harness contract (once, per runtime): (i) strict sequencing, where a bail in $c_w$ aborts the rest of the C sequence; (ii) load/unload is a bijection between reachable VM states and stack nouns; (iii) semantic exactness of the noun representation, with C bignums where Nock has bignums, no silent machine-width truncation.
+  \item  Leaf contract (per word, the table): the restriction of  Equations~\ref{eqn:contract1}--\ref{eqn:contract3} to a single word,
+  \begin{enumerate}
+    \item  $*[S\ \varphi_w] = v \in \mathcal{N} \iff c_w(S) = v$;
+    \item  $*[S\ \varphi_w] = \bot_\text{det} \iff c_w(S)$ bails
+    \texttt{\%exit};
+    \item  $*[S\ \varphi_w] \Uparrow\; \Longrightarrow\; c_w(S)
+    \Uparrow$,
+  \end{enumerate}
+  \noindent under the load/unload simulation.\footnote{Since the $\Lambda$ compiler emits domain guards, case (c) is vacuous for every word in
+  Tables~\ref{tbl:forth-a}--\ref{tbl:forth-c}; it becomes live only
+  for \texttt{while}, §Class D.}
+  \item  Harness contract (once, per runtime): (i) mote-preserving strict sequencing, where an \texttt{\%exit} in $c_w$ aborts the rest of the C sequence and surfaces \texttt{\%exit}, neither caught nor coarsened to a generic \texttt{\%bail}; (ii) load/unload is a bijection between reachable VM states and stack nouns; (iii) semantic exactness of the noun representation, with C bignums where Nock has bignums, no silent machine-width truncation.
   \item  Nock opcode \texttt{7}: \texttt{*[S\ [7\ b\ c]] = *[*[S\ b]\ c]}
 \end{enumerate}
 
-\textbf{Theorem}.  For all $p \in \mathcal{W}^*$ and all $S$, we have $*[S\ N(p)] \simeq C(p)(S)$.
+\textbf{Theorem}.  For all $p \in \mathcal{W}^*$ and all
+$S \in \mathcal{N}$, $*[S\ N(p)]$ and $C(p)(S)$ agree in
+$\mathcal{O}$.
 
-\textbf{Proof}.  Induction on $|p|$.  Base: $[0\ 1]$ and skip are both the identity.  Step $p = w \cdot q$: by Nock 7, $*[S\ N(p)] = *[*[S\ \varphi_w]\ N(q)]$.  Case $\bot$: if $*[S\ \varphi_w] = \bot$, the left side is $\bot$; by the leaf contract $c_w(S) = \bot$, and by strict sequencing the whole C sequence is $\bot$.  Case defined: $*[S\ \varphi_w] = S' = c_w(S)$ by the leaf contract, and the induction hypothesis gives $*[S'\ N(q)] \simeq C(q)(S')$.  QED.
+\textbf{Proof}.  Induction on $|p|$.  Base: $\mathtt{[0\;1]}$ and \texttt{skip} are both the identity.  Step $p = w \cdot q$: by Nock \texttt{7}, $*[S\ N(p)] = *[*[S\ \varphi_w]\ N(q)]$.  Three cases on $*[S\ \varphi_w]$.  If $\bot_\text{det}$: the left side crashes
+deterministically; by leaf (b), $c_w(S)$ bails \texttt{\%exit}, and by
+mote-preserving strict sequencing the whole C sequence surfaces
+\texttt{\%exit}.  If $\Uparrow$: the left side diverges; by leaf (c),
+$c_w(S)$ diverges, and the C sequence never reaches its next
+statement.  If a value $S'$: by leaf (a), $c_w(S) = S'$, and the
+induction hypothesis gives agreement of $*[S'\ N(q)]$ and
+$C(q)(S')$.  \textsc{qed}
 
-The Forth $\Lambda$ tables are given in Tables~\ref{tbl:forth-a}, \ref{tbl:forth-b}, and \ref{tbl:forth-c}.
+The following caveats apply in a real system:
+
+\begin{enumerate}
+  \item  Strictness is a proof obligation about the harness, not the
+  leaves.  If a C bail does not abort the sequence (e.g., a forgotten
+  error-code check or a \texttt{setjmp} scope bug), the theorem is
+  false even with every leaf proven.\footnote{In Vere,
+  \texttt{u3m\_bail}'s longjmp discipline is load-bearing.}
+  \item  Mote preservation is likewise a harness obligation.  If the
+  error plumbing ever coarsens an \texttt{\%exit} into a
+  nondeterministic bail---or catches and continues---then clause
+  (\ref{eqn:contract2}) fails under \texttt{+mock} even though every
+  leaf is correct: the jetted path and the unjetted path become
+  distinguishable by ordinary Hoon code, per the Introduction.
+  \item  While associativity is free, canonicity is not.  The right
+  fold is a compilation choice, but real jet dispatch matches on
+  structure, so the compiler must emit one canonical shape.
+\end{enumerate}
+
+The Forth $\Lambda$ tables are given in Tables~\ref{tbl:forth-a}, \ref{tbl:forth-b}, and \ref{tbl:forth-c}.  $\bot$ domain entries are relative to the well-formed-stack invariant, so that every row is a depth constraint plus any value constraint.  Class A (Table~\ref{tbl:forth-a}) describes structurally correspondent expressions.  The proofs follow from tree arithmetic.  Class B (Table~\ref{tbl:forth-b}) covers the remaining primitive opcode expressions.  Proofs are delegated.  Class C (Table~\ref{tbl:forth-c}) presents algorithm substitutions, which are the only rows that require a proof.  Classes A and B are essentially free; Class C is small and closed.  \texttt{depth} means the requisite number of stack elements (i.e. you cannot subtract a single operand).
+
+The $\Lambda$ compiler emits domain guards ahead of every partial operation, so co-derived Nock crashes deterministically on domain violations, and genuine divergence is confined to user-written unbounded loops.
+
+For instance, the canonical decrement in Nock is expressed as
+
+\begin{lstlisting}[style=listingblock]
+dec := [8 [1 0] 8 [1 6 [5 [0 7] 4 0 6] [0 6] [9 2 [0 2] [4 0 6] 0 7]] 9 2 0 1]
+\end{lstlisting}
+
+\noindent
+which is unguarded at \texttt{0} and at a cell.\footnote{The actual evaluation will be on the stack, rather than on a bare atom:  something like $φ_\text{dec} = \mathtt{[[7\;[0\;2]\ <guarded-dec>]\;0\;3]}$.}  The co-derived C code should behave identically on these cases.  $\Lambda$ should emit a guard for these cases \texttt{[6 [3 0 2] [0 0] [6 [5 [1 0] 0 2] [0 0] <count-up>]]} which crashes on zero or a cell.  Thus Nock yields $\bot_\text{det}$ at 0 or cell, the C code bails $\bot_\text{det}$ at 0 or cell, and clause 2 holds exactly.  The $\Lambda$ C code is then:\footnote{We show a C correspondence based on the $\Lambda$ compiler, not the actual Vere jet.  The \texttt{c3}/\texttt{u3} Vere implementation is somewhat more complex and uses a different calling convention.}
+
+\begin{lstlisting}[style=listingcode_c]
+void w_dec(vm* m) {
+  noun a = pop(m);
+  if (is_cell(a) || is_zero(a))  bail(m);
+  push(m, atom_sub(a, 1));
+}
+\end{lstlisting}
+
+\noindent
+The leaf obligation:  $\forall a \in \text{atoms},\; a > 0: \;\mathtt{*[[a\ r]}\ \phi_\text{dec-lifted}] = \mathtt{[a-1\ r]}$, plus $\bot$-agreement at $a=0$ and at a cell.  Every program composed from these rows inherits correctness through the composition theorem.
 
 \begin{sidewaystable}[tp]
 \centering
@@ -181,13 +247,13 @@ The Forth $\Lambda$ tables are given in Tables~\ref{tbl:forth-a}, \ref{tbl:forth
 \begin{tabular}{lllll}
 \toprule
 Forth word & Effect & Nock $\phi$ & C & $\bot$ domain \\ \midrule
-\texttt{dup} & \texttt{( a — a a )} & \texttt{[[0 2] 0 1]} & \texttt{push(peek)} & \texttt{total} \\
-\texttt{drop} & \texttt{( a — )} & \texttt{[0 3]} & \texttt{pop} & \texttt{stack ≠ \textasciitilde} \\
-\texttt{swap} & \texttt{( a b — b a )} & \texttt{[[0 6] [0 2] 0 7]} & \texttt{exchange} & \texttt{depth ≥ 2} \\
-\texttt{over} & \texttt{( a b — a b a )} & \texttt{[[0 6] 0 1]} & \texttt{push(peek2)} & \texttt{depth ≥ 2} \\
-\texttt{cons} & \texttt{( h t — [h t] )} & \texttt{[[[0 6] 0 2] 0 7]} & \texttt{cell(a,b)} & \texttt{depth ≥ 2} \\
-\texttt{head} & \texttt{( c — h )} & \texttt{[[0 4] 0 3]} & \texttt{->head} & \texttt{crash if c atom} \\
-\texttt{tail} & \texttt{( c — t )} & \texttt{[[0 5] 0 3]} & \texttt{->tail} & \texttt{crash if c atom} \\
+\texttt{dup} & \texttt{( a — a a )} & \texttt{[[0 2] 0 1]} & \texttt{push(peek)} & depth ≥ 1 \\
+\texttt{drop} & \texttt{( a — )} & \texttt{[0 3]} & \texttt{pop} & stack ≠ \texttt{\textasciitilde} \\
+\texttt{swap} & \texttt{( a b — b a )} & \texttt{[[0 6] [0 2] 0 7]} & \texttt{exchange} & depth ≥ 2 \\
+\texttt{over} & \texttt{( a b — a b a )} & \texttt{[[0 6] 0 1]} & \texttt{push(peek2)} & depth ≥ 2 \\
+\texttt{cons} & \texttt{( h t — [h t] )} & \texttt{[[[0 6] 0 2] 0 7]} & \texttt{cell(a,b)} & depth ≥ 2 \\
+\texttt{head} & \texttt{( c — h )} & \texttt{[[0 4] 0 3]} & \texttt{->head} & crash if \texttt{c} atom \\
+\texttt{tail} & \texttt{( c — t )} & \texttt{[[0 5] 0 3]} & \texttt{->tail} & crash if \texttt{c} atom \\
 \bottomrule
 \end{tabular}
 \end{sidewaystable}
@@ -199,9 +265,9 @@ Forth word & Effect & Nock $\phi$ & C & $\bot$ domain \\ \midrule
 \begin{tabular}{lllll}
 \toprule
 Forth word & Effect & Nock $\phi$ & C & $\bot$ domain \\ \midrule
-\texttt{inc} & \texttt{( a — a+1 )} & \texttt{[[4 0 2] 0 3]} & \texttt{native +1 (bignum)} & \texttt{crash if a} \\
-\texttt{celleq} & \texttt{( a b — ? )} & \texttt{[[5 [0 6] 0 2] 0 7]} & \texttt{noun equality} & \texttt{depth ≥ 2} \\
-\texttt{cel?} & \texttt{( a — ? )} & \texttt{[[3 0 2] 0 3]} & \texttt{tag test} & \texttt{total} \\
+\texttt{inc} & \texttt{( a — a+1 )} & \texttt{[[4 0 2] 0 3]} & \texttt{native +1 (bignum)} & crash if cell \\
+\texttt{eq} & \texttt{( a b — ? )} & \texttt{[[5 [0 6] 0 2] 0 7]} & \texttt{noun equality} & depth ≥ 2 \\
+\texttt{cel?} & \texttt{( a — ? )} & \texttt{[[3 0 2] 0 3]} & tag test & depth ≥ 1 \\
 \bottomrule
 \end{tabular}
 \end{sidewaystable}
@@ -213,56 +279,116 @@ Forth word & Effect & Nock $\phi$ & C & $\bot$ domain \\ \midrule
 \begin{tabular}{lllll}
 \toprule
 Forth word & Effect & Nock $\phi$ & C & $\bot$ domain \\ \midrule
-\texttt{dec} & \texttt{( a — a−1 )} & \texttt{[[4 0 3] 0 3]} & \texttt{native -1 (bignum)} & \texttt{crash if a = 0} \\
-\texttt{add} & \texttt{( a b — a+b )} & \texttt{[[4 0 2] [[4 0 3] 0 3] 0 3]} & \texttt{native + (bignum)} & \texttt{depth ≥ 2} \\
-\texttt{sub} & \texttt{( a b — a−b )} & \texttt{[[4 0 2] [[4 0 3] 0 3] 0 3]} & \texttt{native - (bignum)} & \texttt{depth ≥ 2} \\
-\texttt{mul} & \texttt{( a b — a*b )} & \texttt{[[4 0 2] [[4 0 3] 0 3] 0 3]} & \texttt{native * (bignum)} & \texttt{depth ≥ 2} \\
-\texttt{div} & \texttt{( a b — a/b )} & \texttt{[[4 0 2] [[4 0 3] 0 3] 0 3]} & \texttt{native / (bignum)} & \texttt{depth ≥ 2, b ≠ 0} \\
-\texttt{mod} & \texttt{( a b — a mod b )} & \texttt{[[4 0 2] [[4 0 3] 0 3] 0 3]} & \texttt{native mod (bignum)} & \texttt{depth ≥ 2, b ≠ 0} \\
+\texttt{dec} & \texttt{( a — a−1 )} & canonical count-up & native \texttt{-1} (bignum) & crash if \texttt{a == 0} or \texttt{a} cell \\
+\texttt{add} & \texttt{( a b — a+b )} & \texttt{inc-loop} & native \texttt{+} (bignum) & depth ≥ 2 or either operand cell \\
+\texttt{sub} & \texttt{( a b — a−b )} & \texttt{dec-loop} & native \texttt{-} (bignum) & \makecell[l]{depth ≥ 2 or \texttt{b} > \texttt{a}\\or either operand cell} \\
+\texttt{mul}, \texttt{div}, etc. & $\ldots$ & loops & native (bignum) & \makecell[l]{depth ≥ 2 or \texttt{div 0} crashes in spec\\or either operand cell} \\
 \bottomrule
 \end{tabular}
 \end{sidewaystable}
 
-Class D, deliberately deferred: control. ifte ( ? q₁ q₂ — … ) with quotations maps to Nock 6, recursion to 9 over a core. That's where the composition proof stops being trivial, and it deserves its own section rather than a table row — flag it, don't bury it.
-The worked dec row, end to end, is what makes the paper concrete. Spec side — the canonical decrement (the same formula the tutorial literature uses, which matters: the runtime must match on the canonical formula or dispatch never fires):
-dec := [8 [1 0] 8 [1 6 [5 [0 7] 4 0 6] [0 6] [9 2 [0 2] [4 0 6] 0 7]] 9 2 0 1]
-C side:
-cvoid w_dec(vm* m) {
-  noun a = pop(m);
-  if (is_cell(a) || is_zero(a)) bail(m);   /* matches ⊥: cell crashes, 0 diverges */
-  push(m, atom_sub(a, 1));
+Class D consists of expressions with control flow.  Control flow extends the source language from the free monoid $\mathcal{W}^*$ to a term algebra:
+
+\begin{equation}\label{eqn:classd-grammar}
+  p ::= \varepsilon \mid w \cdot p \mid \mathtt{ifte}(q_1, q_2) \cdot p \mid \mathtt{while}(p_t, p_b) \cdot p
+\end{equation}
+
+\noindent
+with quotations resolved at compile time.  The composition theorem extends to this term algebra, with both compilers becoming initial-algebra homomorphisms rather than monoid homomorphisms.  The proof burden is graded from sequencing (the structural induction already given); \texttt{ifte} extends the induction with a case split; and \texttt{while} requires a fixpoint-induction argument.
+
+\subsection{Conditional}
+
+The convention for $\mathtt{ifte}(q_1, q_2)$ has a test flag occupying the top of the stack and being consumed:  branches $q_1$ and $q_2$ execute on the remainder.  The flag is a loobean, with \texttt{0} selecting $q_1$ and \texttt{1} selecting $q_2$; any other value crashes.  The Nock compilation schema ($\Lambda_N$, $\Lambda$ to Nock \textsc{isa}) is:
+
+\begin{equation}\label{eqn:classd-ifte}
+  \Lambda_N(\mathtt{ifte}(q_1, q_2)) = \mathtt{[6\ [0\ 2]\ [7\ [0\ 3]\ } \Lambda_N(q_1) \mathtt{]\ [7\ [0\ 3]\ } \Lambda_N(q_2) \mathtt{]]}
+\end{equation}
+
+\noindent
+The flag is at axis \texttt{2} with the remainder of the stack at axis \texttt{3}; each branch pre-composes \texttt{[0 3]} to discard the flag before execution, matching the C \texttt{pop}.  Nock opcode \texttt{6} crashes on a non-loobean test, so this $\bot_\text{det}$ is inherited from the \textsc{isa} rather than implemented by the schema and the C side has only to match it:
+
+\begin{lstlisting}[style=listingcode_c]
+noun f = pop(m);
+if (!is_loobean(f))  bail(m);
+if (f == 0) { /* C(q1) */ } else { /* C(q2) */ }
+\end{lstlisting}
+
+\noindent
+The correctness proof remains structural induction, with an additional case split on the three-way outcome of the test (\texttt{0}, \texttt{1}, crash):  the value cases close by the induction hypotheses for $q_1$ and $q_2$, and the crash case closes by leaf clause (b) and mote-preserving strict sequencing in $\Lambda_C$.
+
+\subsection{Loop}
+
+The convention for $\mathtt{while}(p_t, p_b)$ is that the test program $p_t$ maps the stack to $\mathtt{[flag\ stack']}$, with the flag consumed by the loop; on \texttt{0} the body $p_b$ executes on $\mathtt{stack'}$ and the loop repeats, on \texttt{1} the loop exits yielding $\mathtt{stack'}$, and any other value crashes.  The Nock compilation schema pins a loop core and fires its single arm:\footnote{Obvious infinite loops can be caught by the Vere runtime machinery (\verepr{905}).}
+
+\begin{subequations}\label{eqn:classd-while}
+  \begin{align}
+    \Lambda_N(\mathtt{while}(p_t, p_b)) &= \mathtt{[8\ [1\ } L \mathtt{]\ 9\ 2\ 0\ 1]} \label{eqn:classd-while-outer} \\
+    L &= \mathtt{[8\ [7\ [0\ 3]\ } \Lambda_N(p_t) \mathtt{]\ [6\ [0\ 4]\ } \notag \\
+      &\qquad \mathtt{[9\ 2\ [0\ 6]\ [7\ [0\ 5]\ } \Lambda_N(p_b) \mathtt{]]\ [0\ 5]]]} \label{eqn:classd-while-arm}
+  \end{align}
+\end{subequations}
+
+\noindent
+The axis arithmetic warrants care.  Opcode \texttt{8} in Equation~\ref{eqn:classd-while-outer} pins $L$, making the subject \texttt{[$L$ $S$]}, and \texttt{9 2 0 1} fires the arm on that core.  Within $L$, the stack sits at axis \texttt{3}, so the inner opcode \texttt{8} pins $t = \mathtt{*[}S\ \Lambda_N(p_t)\mathtt{]} = \mathtt{[flag\ } S' \mathtt{]}$; the subject is now \texttt{[$t$ $L$ $S$]}, placing the flag at axis \texttt{4}, $S'$ at axis \texttt{5}, and $L$ at axis \texttt{6}.  The opcode \texttt{6} tests axis \texttt{4}, crashing on a non-loobean exactly as in the conditional schema.  The exit branch \texttt{[0 5]} returns $S'$.  The continue branch rebuilds the core by autocons---head \texttt{[0 6]} recovers $L$, tail \texttt{[7 [0 5] $\Lambda_N(p_b)$]} computes the new stack from $S'$---and \texttt{9 2} fires the rebuilt core.  The C schema is the evident loop:
+
+\begin{lstlisting}[style=listingcode_c]
+for (;;) {
+  /* C(p_t) */
+  noun f = pop(m);
+  if (!is_loobean(f))  bail(m);
+  if (f != 0)  break;
+  /* C(p_b) */
 }
-Leaf obligation: ∀a ∈ atoms, a>0: *[[a r] φ_dec-lifted] = [a−1 r], plus ⊥-agreement at a=0 (spec diverges, jet bails — and here you owe the paper one honest sentence: bail-vs-diverge is equivalence up to the runtime's bail discipline, not strict Kleene equality; Vere already makes this exact tradeoff, cite it) and at a cell (both crash). One proof. Every program composed from these rows then inherits correctness through the composition theorem — no further proofs, both backends, forever.
-Note what the table's shape proves about the design: classes A and B are free, class C is small and closed, and the ratio is the answer to "O(1) amortized" skepticism — the amortization isn't hand-waving, it's ~10 hand proofs total, enumerable in one table.
-Open items I'd resolve before writing the section: the stack-depth ⊥ entries (does swap on a depth-1 stack crash in both backends identically — Nock axis 6 into ~ crashes, C must check), whether quotations are nouns-on-stack or compile-time-only (compile-time-only keeps the composition proof first-order; do that in v1), and the runtime-dispatch question from before — whose dec formula does Vere match, yours or Hoon's? If they differ by even one axis, class C jets never fire. That's a one-paragraph "deployment considerations" subsection but it decides whether this is a paper about Urbit or a paper about a new system.
-Want the composition theorem stated formally next (juxtaposition/7/sequencing, with the induction), or the Class D control-flow design?
+\end{lstlisting}
 
+\noindent
+Structural induction fails for \texttt{while} since the meaning of the body refers to the loop itself.  Both sides are least fixed points of functionals on $\mathcal{N} \to \mathcal{O}$: the Nock side by the recursive firing of the rebuilt core, the C side by the standard loop semantics.  The two functionals are pointwise equal by the sequencing and conditional schemas together with the leaf contracts; equal functionals have equal least fixed points, and the argument is discharged once by fixpoint induction.\footnote{Leaf clause (c) becomes live here, and only here: a loop whose test never yields \texttt{1} diverges on the Nock side and never breaks on the C side.  Divergence agrees with divergence, and no guard is possible or wanted.}
 
+\subsection{Named Definitions}
 
----
+Forth named definitions (colon words) add no additional machinery.  A non-self-referential definition is inline code.  A self-recursive definition generalizes the \texttt{while} schema:  the recursive call is an opcode \texttt{9} refiring of the enclosing core, and the same fixpoint argument applies with the arm at a different axis.  Mutual recursion is a simultaneous fixpoint over a multi-armed battery.  Each is covered by the single fixpoint schema proof.
+
+In summary, sequencing and \texttt{ifte} extend the structural induction; \texttt{while} adds one fixpoint-induction schema proof.  The total proof effort for the pipeline is therefore the Class C leaf proofs plus three schema proofs for sequencing, conditionals, and loops.
+
+\subsection{Runtime Code}
+
+$\Lambda$ is a language design line built around Nock opcode \texttt{2}.  Compile-time control preserves intact co-derivation because the source of truth is the program tree with both compilers as initial-algebra homomorphisms.  The total proof effort is built on Class C plus the three schema proofs.  Beyond Class D lies runtime code-as-data: quotations on the stack executed via Nock opcode \texttt{2}.  The C backend necessarily faces code that it cannot see at compile time.  The options are to interpret it (which is correct but has the performance profile of direct derivation, effectively rebuilding the Nock interpreter inside the jet) or to \textsc{jit} it under verification (a verified compiler executing at runtime, which is the full hard direct-derivation problem).  Co-derivation's economy is coextensive with the \texttt{eval}-free fragment, and the \textsc{ski} development's ``fragment boundary'' reappears here as a language-design line rather than an expressivity observation.\footnote{See \patp{lagrev-nocfep}, pp.~TODO–TODO in this volume.}  The pipeline is not total:  code outside of $\Lambda$ is not forbidden, but simply interpreted.\footnote{\textsc{ans} Forth control words (\texttt{IF}, \texttt{THEN}, \texttt{ELSE}, \texttt{BEGIN}, \texttt{UNTIL}, etc.) are compile-time immediate words which lay down branch targets resolved at compile time, rather than Joy/Factor-style runtime quotations.  Thus the concatenative tradition split along exactly this line, and the half that shipped standards chose the side the proof needs \citep{dpans94}.}
+
+\section{Deployment and Dispatch}
+
+At this point, we have two descriptive compilers $\Lambda_N$ ($\Lambda$ to Nock \textsc{isa}) and $\Lambda_C$ ($\Lambda$ to C) which are proven to produce semantically equivalent outputs.  The question remains of how to deploy the C output as a jet in a real runtime.  Jets are not dispatched by matching arbitrary formulas in any current runtime.  Jets are registered by Nock opcode \texttt{11} \texttt{\%fast} hints (stateful) or \texttt{\%wild} hints (stateless),\footnote{The \texttt{\%wild} hint has been proposed as \href{https://github.com/urbit/UIPs/blob/main/UIPS/UIP-0122.md}{\textsc{uip}-0122} by \patp{ritpub-sipsyl} as a way of resolving jets with no stored state in the runtime as is currently the case.} which Hoon's \texttt{\textasciitilde\%/\textasciitilde/} runes emit around cores.  The hint's clue carries a name, a parent axis, and hooks; the runtime walks the parent chain to the registration root, and firing is keyed on the battery (the code half of the core) by noun identity.\footnote{In today's Vere, the cold/hot/warm state is keyed on battery hash and parent lineage.}  Two consequences drop out of this scheme:
+
+\begin{enumerate}
+  \item  Hints are semantically transparent so the composition theorem is untouched by their presence.  $\Lambda_{N}$ can wrap its output in \texttt{\%fast} hints without any change to the proof.
+  \item  Caveat 3 is refined from a notional ``canonical shape'' to the real invariant for the runtime architecture:  the registration target is a battery, and jet firing requires noun identity between the emitted battery and the registered one.  Canonicity becomes the dispatch key.
+\end{enumerate}
+
+\noindent
+This forces a layout question we have until now deferred.  $\Lambda$'s convention is that \texttt{S = [top rest]}, but Vere dispatches on cores \texttt{[battery payload]}, with the arm fired via Nock opcode \texttt{9} and the gate sample at axis \texttt{6}.  $\Lambda_N$'s output must be packaged in order to emit a one-armed core whose arm body is the composed formula lifted from gate convention to stack convention and back.  A mechanical shim (building an initial stack from the sample, running the pipeline, and returning the top) falls under Class A (opcode \texttt{0} plumbing plus one \texttt{7}), so it costs nothing in the proof.  The C side's load must implement the same shim, or harness contract (ii)'s bijection is between the wrong states.
+
+There are thus three possible scenarios for deployment of the co-derived C output:
+
+\begin{enumerate}
+  \item  $\Lambda$ replaces the source of jetted arms.  The $\Lambda$-emitted core (battery, \texttt{\%fast} hint, etc.) ships in the kernel source; the C output registers against \emph{that} battery.  Battery identity holds by construction since both artifacts result from the same fold.  No proof relating $\Lambda$'s output to anything else is necessary, because there is nothing else.  This yields the strongest $\mathcal{O}(1)$ claim.
+  \item  $\Lambda$ output must match existing Hoon-compiled batteries.  Hoon's compiler output is not canonical across compiler versions, and proving $\Lambda$'s \texttt{F} to be noun-identical to Hoon's \texttt{F} per arm is a per-jet obligation, which the pipeline was hopeful to eliminate.
+  \item  A new runtime jet dashboard designs dispatch around $\Lambda$ from the start without incumbency constraints.
+\end{enumerate}
+
+\noindent
+Any co-derivation today would have to deploy under scenario 1 for new library code.  It cannot of course retrofit the existing jet corpus.  However, new code is afforded a much simpler version of the kelvin maintenance problem:  a kelvin bump would simply mean rerunning two folds and the ``tendentious layer of support'' would become merely a recompilation.
+
+% \section{Future Work}
+
+% the two compilers N and C are two homomorphisms out of the same initial algebra, and nothing limits the count to two — a third backend could emit the arithmetization of the program in the Zorp/Nockchain Dyck-word encoding, giving spec, implementation, and provable-execution trace from one source.
 
 % Did I tell you that I think we can do a co-derivation of Nock and C from using a Dyck word index into a Forth program as the original source-of-truth?
 
-The Dyck/Łukasiewicz word is the trace of the Forth program that built the noun.
+% The Dyck/Łukasiewicz word is the trace of the Forth program that built the noun.
 
-
-the Λ compiler emits domain guards ahead of every partial operation, so the co-derived Nock crashes deterministically on domain violations, and genuine divergence is confined to user-written unbounded loops — where clause 3's "C diverges identically" is exactly what the C while gives you for free.
-
-\section{A Wild Ernest Appears}
-
-You can have as many sections as make sense.  Only sections and subsections appear in the table of contents.
 
 \section{Conclusion}
 
-To summarize, why did you write it?  Why do we care?  What impact should it have on Urbit development?
-
-Your bibliography is a separate BibTeX file.  We use the \texttt{plainnat} bibliography style.  You can use \texttt{natbib} citation commands like \texttt{\textbackslash citep\{wikipedia\}} for parenthesized references.  Use \texttt{\textbackslash citet\{wikipedia\}} for inline references.  You can also use \texttt{\textbackslash citeauthor\{wikipedia\}} for the principal author's name.
-
-``You can use traditional TeX---or LaTeX---representations'' \citep{Varney1987}.
-
-“Or you can use fancy quotes—and symbols.”
-
-End the article with the tombstone.\tombstone
+Jetting has long been a load-bearing feature of Nock \textsc{isa} programming, dating back at least to \citet{Nock12K} which introduced the hint mechanism in Nock 12K.  However, there has been little formal consideration of jet correctness.  We have presented a co-design approach to jet correctness, in which a source language $\Lambda$ is compiled to both Nock and a low-level implementation, with a proof of equivalence between the two outputs.  This approach allows for per-jet proofs to be eliminated, and for the trusted base to be small and closed.  We have also discussed the deployment of co-derived jets in a real runtime, and the implications for maintenance and evolution of the system.  Moreover, such a scheme could be adapted to other combinator systems with similar formal provability (e.g., \textsc{ski}, \textsc{bckw}).  While this particular scheme is not yet implemented in a practical runtime, it provides a beckoning direction for future work in the area of formal verification of deterministic programs.\tombstone
 
 \selectlanguage{USenglish}
 \printbibliography
