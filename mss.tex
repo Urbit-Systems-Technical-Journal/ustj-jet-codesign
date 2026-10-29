@@ -60,11 +60,11 @@ Jets, or hand-written native equivalents of Nock formulas, carry a correctness c
 The Nock combinator calculus frequently serves as an instruction set architecture (\textsc{isa}) for a virtual machine, but strict adherence to its formal requirements produces code that evaluates slowly relative to native machine operations.  (Infamously, there is no decrement, for instance.)  To address this, the Urbit runtime implements a system of \emph{jets},\footnote{Derived from ``jet-accelerated code''.} which are hand-written equivalents of Nock formulas in a low-level language.  Given a Nock formula $F$, a Nock subject $S$, and a function $f$ written in a target language $\mathcal{L}$, we require that the following contract hold over all nouns $\mathcal{N}$:
 
 \begin{equation}\label{eqn:jet}
-\forall S \in \mathcal{N}: *[S\; F] \simeq f_{\mathcal{L}}(S)
+\forall S \in \mathcal{N}: \texttt{*[}S\; F\texttt{]} \simeq f_{\mathcal{L}}(S)
 \end{equation}
 
 \noindent
-in which $\simeq$ denotes agreement in the three-valued outcome set $\mathcal{N} \cup \{\bot_\text{det}, \Uparrow\}$:  on every subject $S$ for which $f_{\mathcal{L}}$ does not punt, the outcome of $*[S\; F]$ is the outcome of $f_{\mathcal{L}}(S)$, with a nondeterministic bail on the implementation side identified with divergence, as made precise in Equations~\ref{eqn:contract1}--\ref{eqn:contract3} below.  A deterministic crash is an outcome in its own right, distinct from divergence; the two-valued reading that identifies them is the one shown unsound below.  The jet system is a form of co-design wherein the Nock formula $F$ is the specification.  The target language $\mathcal{L}$ is typically C (Vere) or Rust (NockVM, the interpreter beneath NockApp and Nockchain), but occasionally some other low-level language (such as Forth for the Trinitite experimental OS)\footnote{See \href{https://github.com/sigilante/trinitite}{\texttt{sigilante/trinitite}}.}; one can also envision Wasm serving this role as the Urwasm project\footnote{See \patp{dozreg-toplud}, ``The \texttt{urwasm} WebAssembly Interpreter Suite on Urbit,'' \emph{Urbit Systems Technical Journal} volume 1 issue 1, pp.~~133--150.} unfolds.  The function $f_{\mathcal{L}}$ is the implementation of the jet in $\mathcal{L}$.
+in which $\simeq$ denotes agreement in the three-valued outcome set $\mathcal{N} \cup \{\bot_\text{det}, \Uparrow\}$:  on every subject $S$ for which $f_{\mathcal{L}}$ does not punt, the outcome of $\texttt{*[}S\; F\texttt{]}$ is the outcome of $f_{\mathcal{L}}(S)$, with a nondeterministic bail on the implementation side identified with divergence, as made precise in Equations~\ref{eqn:contract1}--\ref{eqn:contract3} below.  A deterministic crash is an outcome in its own right, distinct from divergence; the two-valued reading that identifies them is the one shown unsound below.  The jet system is a form of co-design wherein the Nock formula $F$ is the specification.  The target language $\mathcal{L}$ is typically C (Vere) or Rust (NockVM, the interpreter beneath NockApp and Nockchain), but occasionally some other low-level language (such as Forth for the Trinitite experimental OS)\footnote{See \href{https://github.com/sigilante/trinitite}{\texttt{sigilante/trinitite}}.}; one can also envision Wasm serving this role as the Urwasm project\footnote{See \patp{dozreg-toplud}, ``The \texttt{urwasm} WebAssembly Interpreter Suite on Urbit,'' \emph{Urbit Systems Technical Journal} volume 1 issue 1, pp.~133--150.} unfolds.  (We will write ``C'' as our generic systems language target while recognizing this as a synecdoche.)  The function $f_{\mathcal{L}}$ is the implementation of the jet in $\mathcal{L}$.
 
 There is a taxonomy of bottoms (crashes) in a Nock runtime which result from this contract:
 
@@ -78,9 +78,9 @@ Divergence can only be terminated with a nondeterministic crash;\footnote{Here, 
 
 \begin{subequations}
   \begin{align}
-    *[S\; F] = v \in \mathcal{N} \iff & f(S) = v \label{eqn:contract1} \\
-    *[S\; F] = \bot_\text{det} \iff & f(S) \text{ bails deterministically} \label{eqn:contract2} \\
-    *[S\; F] \text{ diverges} \;\Longrightarrow\; & f(S) \text{ diverges or bails } \bot_\text{nondet} \label{eqn:contract3}
+    \texttt{*[}S\; F\texttt{]} = v \in \mathcal{N} \iff & f(S) = v \label{eqn:contract1} \\
+    \texttt{*[}S\; F\texttt{]} = \bot_\text{det} \iff & f(S) \text{ bails deterministically} \label{eqn:contract2} \\
+    \texttt{*[}S\; F\texttt{]} \text{ diverges} \;\Longrightarrow\; & f(S) \text{ diverges or bails } \bot_\text{nondet} \label{eqn:contract3}
   \end{align}
 \end{subequations}
 
@@ -159,15 +159,15 @@ In fact, whitelisted optimizations (as mentioned in the direct derivation sectio
 
 We can construct a co-design table for a $\Lambda$ compiler that produces both Nock and a low-level language implementation.  We will produce a description of a $\Lambda$ compiler for a concatenative Forth source.  Forth is well-suited as a source language for a Nock \textsc{isa} compiler because its stack-based semantics map naturally to a Nock evaluation model.
 
-The subject is a null-terminated, rightward-branching stack \lstinline[style=inlinecode]{S = [top rest]}.  We instantiate an example of a $\Lambda$ compiler that, in this case, produces Nock formulas $\varphi\rightarrow$\texttt{φ} with \lstinline[style=inlinecode]{*[S φ] = stack'} and C routines (as Vere \lstinline[style=inlinecode]{u3}-style tagged nouns).  The compiler is a right fold over the program, which is a sequence of Forth words.  Each word has a corresponding Nock formula and C routine, and the compiler produces a Nock formula and C routine for the entire program by folding over the sequence of words.  Juxtaposition is the correspondence of Nock opcode \lstinline[style=inlinecode]{7} to C sequencing as a composition theorem.
+The subject is a null-terminated, rightward-branching stack $S = \texttt{[}\textrm{top}\ \textrm{rest}\texttt{]}$.  We instantiate an example of a $\Lambda$ compiler that, in this case, produces Nock formulas $\varphi$ with $\texttt{*[}S\ \varphi\texttt{]} = S'$ and C routines (as Vere \lstinline[style=inlinecode]{u3}-style tagged nouns).  The compiler is a right fold over the program, which is a sequence of Forth words.  Each word has a corresponding Nock formula and C routine, and the compiler produces a Nock formula and C routine for the entire program by folding over the sequence of words.  Juxtaposition is the correspondence of Nock opcode \lstinline[style=inlinecode]{7} to C sequencing as a composition theorem.
 
 The composition theorem is the key to the co-design problem.  Fix the noun domain $\mathcal{N}$ and the three-valued outcome set $\mathcal{O} = \mathcal{N} \cup \{\bot_\text{det}, \Uparrow\}$ of Equations~\ref{eqn:contract1}--\ref{eqn:contract3}.  A word $w$ denotes a function $\llbracket w \rrbracket : \mathcal{N} \to \mathcal{O}$ on stack nouns.  Programs are the free monoid $\mathcal{W}^*$ over the word set.  We define two compilers as right folds:
 
 \begin{subequations} %\label{eqn:compilers}
   \begin{align}
     \Lambda_N(\varepsilon) &= \texttt{[0\;1]} \label{eqn:compiler_N1} \\
-    \Lambda_N(w \cdot p) &= [7\ \varphi_w\ \Lambda_N(p)] \label{eqn:compiler_N2} \\
-    \Lambda_C(\varepsilon) &= \text{skip}  \label{eqn:compiler_C1} \\
+    \Lambda_N(w \cdot p) &= \texttt{[7\ }\varphi_w\ \Lambda_N(p)\texttt{]} \label{eqn:compiler_N2} \\
+    \Lambda_C(\varepsilon) &= \texttt{skip}  \label{eqn:compiler_C1} \\
     \Lambda_C(w \cdot p) &= c_w\,;\, \Lambda_C(p) \label{eqn:compiler_C2}
   \end{align}
 \end{subequations}
@@ -177,28 +177,28 @@ The theorem is supported by three contracts:
 \begin{enumerate}
   \item  Leaf contract (per word, the table): Equations~\ref{eqn:contract1}--\ref{eqn:contract3} for a single word, with clause (c) strengthened to exact divergence, since the modeled C routines never bail nondeterministically,
   \begin{enumerate}
-    \item  $*[S\ \varphi_w] = v \in \mathcal{N} \iff c_w(S) = v$;
-    \item  $*[S\ \varphi_w] = \bot_\text{det} \iff c_w(S)$ bails
+    \item  $\texttt{*[}S\ \varphi_w\texttt{]} = v \in \mathcal{N} \iff c_w(S) = v$;
+    \item  $\texttt{*[}S\ \varphi_w\texttt{]} = \bot_\text{det} \iff c_w(S)$ bails
     \lstinline[style=inlinecode]{%exit};
-    \item  $*[S\ \varphi_w] \Uparrow\; \Longrightarrow\; c_w(S)
+    \item  $\texttt{*[}S\ \varphi_w\texttt{]} \Uparrow\; \Longrightarrow\; c_w(S)
     \Uparrow$,
   \end{enumerate}
   \noindent under the load/unload simulation.\footnote{Since the $\Lambda$ compiler emits domain guards, case (c) is vacuous for every mechanized word in Tables~\ref{tbl:forth-a}--\ref{tbl:forth-c} (\texttt{word\_crash\_total}); divergence enters only through the \texttt{while} and call schemas, which carry it in the schema proof rather than in a leaf.}
   \item  Harness contract (once, per runtime): (i) mote-preserving strict sequencing, where an \lstinline[style=inlinecode]{%exit} in $c_w$ aborts the rest of the C sequence and surfaces \lstinline[style=inlinecode]{%exit}, neither caught nor coarsened to a generic \lstinline[style=inlinecode]{%bail}; (ii) load/unload is a bijection between reachable VM states and stack nouns; (iii) semantic exactness of the noun representation, with C bignums where Nock has bignums, no silent machine-width truncation.  The companion artifact builds (i) into its C model by construction and takes (ii) and (iii) as given; they are the trusted base, not theorems.
-  \item  Nock opcode \lstinline[style=inlinecode]{7}: \lstinline[style=inlinecode]{*[S [7 b c]] = *[*[S b] c]}
+  \item  Nock opcode \lstinline[style=inlinecode]{7}: $\texttt{*[}S\ \texttt{[7}\ \texttt{b}\ \texttt{c}\texttt{]]} = \texttt{*[*[}S\ \texttt{b}\texttt{]}\ \texttt{c}\texttt{]}$
 \end{enumerate}
 
-\textbf{Theorem}.  For all $p \in \mathcal{W}^*$ and all $S \in \mathcal{N}$, $*[S\ \Lambda_N(p)]$ and $\Lambda_C(p)(S)$ agree in $\mathcal{O}$.
+\textbf{Theorem}.  For all $p \in \mathcal{W}^*$ and all $S \in \mathcal{N}$, $\texttt{*[}S\ \Lambda_N(p)\texttt{]}$ and $\Lambda_C(p)(S)$ agree in $\mathcal{O}$.
 
 \textbf{Proof}.  Induction on $|p|$.  Base: $\texttt{[0\;1]}$ and \lstinline[style=inlinecode]{skip} are both the identity.  Step $p = w \cdot q$: by Nock \lstinline[style=inlinecode]{7},
 \[
-*[S\ \Lambda_N(p)] = *[*[S\ \varphi_w]\ \Lambda_N(q)]\text{.}
+\texttt{*[}S\ \Lambda_N(p)\texttt{]} = \texttt{*[}\texttt{*[}S\ \varphi_w\texttt{]}\ \Lambda_N(q)\texttt{]}\text{.}
 \]
-Three cases obtain over $*[S\ \varphi_w]$:
+Three cases obtain over $\texttt{*[}S\ \varphi_w\texttt{]}$:
 \begin{itemize}[nosep]
   \item[$\bot_\text{det}$.]  The left side crashes deterministically; by leaf (b), $c_w(S)$ bails \lstinline[style=inlinecode]{%exit}, and by mote-preserving strict sequencing the whole $\Lambda_C$ sequence surfaces \lstinline[style=inlinecode]{%exit}.
   \item[$\Uparrow$.]  The left side diverges; by leaf (c), $c_w(S)$ diverges, and the $\Lambda_C$ sequence never reaches its next statement.
-  \item[$S'$.]  By leaf (a), $c_w(S) = S'$, and the induction hypothesis gives agreement of $*[S'\ \Lambda_N(q)]$ and $\Lambda_C(q)(S')$.  \textsc{qed}
+  \item[$S'$.]  By leaf (a), $c_w(S) = S'$, and the induction hypothesis gives agreement of $\texttt{*[}S'\ \Lambda_N(q)\texttt{]}$ and $\Lambda_C(q)(S')$.  \textsc{qed}
 \end{itemize}
 
 The following caveats apply in a real system:
@@ -243,7 +243,7 @@ void w_dec(vm* m) {
 \end{lstlisting}
 
 \noindent
-The leaf obligation:  $\forall a \in \text{atoms},\; a > 0: \;\texttt{*[[a\ r]}\ \phi_\text{dec-lifted}] = \texttt{[a-1\ r]}$, plus $\bot$-agreement at $a=0$ and at a cell.  Every program composed from these rows inherits correctness through the composition theorem.
+The leaf obligation:  $\forall a \in \text{atoms},\; a > 0: \;\texttt{*[[a\ r]}\ \phi_\text{dec-lifted}\texttt{]} = \texttt{[a-1\ r]}$, plus $\bot$-agreement at $a=0$ and at a cell.  Every program composed from these rows inherits correctness through the composition theorem.
 
 \begin{sidewaystable}[tp]
 \centering
@@ -261,9 +261,9 @@ Forth word & Effect & Nock $\varphi$ & C & $\bot$ domain \\ \midrule
 \texttt{tail} & \texttt{( c — t )} & \texttt{[[0 5] 0 3]} & \texttt{->tail} & depth ≥ 1 or crash if \texttt{c} atom \\
 \bottomrule
 \end{tabular}
-\end{sidewaystable}
 
-\begin{sidewaystable}[tp]
+\vspace{1.5em}  % Tables A and B share one sideways page
+
 \centering
 \caption{Class B.  Opcode-backed correspondence of Forth words to Nock formulas and C routines.  Nock formulas use a single non-zero opcode.  Proof obligation is subsumed by interpreter correctness.}
 \label{tbl:forth-b}
@@ -301,7 +301,7 @@ Class D consists of expressions with control flow.  Control flow extends the sou
 \noindent
 with quotations resolved at compile time.  The composition theorem extends to this term algebra, with both compilers becoming initial-algebra homomorphisms rather than monoid homomorphisms.  The proof burden is graded from sequencing (the structural induction already given); \lstinline[style=inlinecode]{ifte} extends the induction with a case split; and \lstinline[style=inlinecode]{while} needs a fixpoint-induction argument.
 
-The Class D schemas are mechanically verified in the companion Lean 4 artifact.\footnote{Available at \url{https://github.com/sigilante/lean-nock}, tag \texttt{v0.9} (commit \texttt{95c85aa504acc006bd505ef19abd0478f3a8e1a5}).  All theorems cited in this paper are named as cited; an audit manifest elaborated at build time fails the build if any cited theorem's axiom footprint exceeds $\{$\texttt{propext}, \texttt{Quot.sound}$\}$, if any \texttt{sorry} is present, or if any cited name is renamed.  The manifest checks names and axiom footprints, not theorem statements; the statements cited here were read against the prose at the pinned commit.}  The theorem \lstinline[style=inlinecode]{composition_term} establishes, for every term of Equation~\ref{eqn:classd-grammar} and every subject, agreement between the compiled Nock formula and a big-step reference semantics of $\Lambda$ that stands in for the C side, its rules transcribing the listings of this section with mote-preserving strict sequencing built in: the same values and the same deterministic crashes.  Its corollary \lstinline[style=inlinecode]{composition_diverges} extends agreement to the third outcome:  the compiled formula diverges exactly when the C model does, stated as a biconditional between two absence-of-derivation propositions.  This is the operational counterpart of the equal-least-fixed-points claim of the following subsections.\footnote{The mechanization discharges the fixpoint argument operationally rather than denotationally: a simulation pair between big-step relations, forward by derivation induction and backward by strong induction on interpreter fuel, the fuel interpreter supplying the height measure that a \textsf{Prop}-valued derivation relation does not natively possess.}
+The Class D schemas are mechanically verified in the companion Lean 4 artifact.\footnote{Available at \url{https://github.com/sigilante/lean-nock}, tag \texttt{v0.9} (commit \texttt{95c85aa}).  All theorems cited in this paper are named as cited; an audit manifest elaborated at build time fails the build if any cited theorem's axiom footprint exceeds $\{$\texttt{propext}, \texttt{Quot.sound}$\}$, if any \texttt{sorry} is present, or if any cited name is renamed.  The manifest checks names and axiom footprints, not theorem statements; the statements cited here were read against the prose at the pinned commit.}  The theorem \lstinline[style=inlinecode]{composition_term} establishes, for every term of Equation~\ref{eqn:classd-grammar} and every subject, agreement between the compiled Nock formula and a big-step reference semantics of $\Lambda$ that stands in for the C side, its rules transcribing the listings of this section with mote-preserving strict sequencing built in: the same values and the same deterministic crashes.  Its corollary \lstinline[style=inlinecode]{composition_diverges} extends agreement to the third outcome:  the compiled formula diverges exactly when the C model does, stated as a biconditional between two absence-of-derivation propositions.  This is the operational counterpart of the equal-least-fixed-points claim of the following subsections.\footnote{The mechanization discharges the fixpoint argument operationally rather than denotationally, as a simulation pair between big-step relations.  Forward, every C-model run is matched by a Nock derivation, by induction on the C-model derivation.  Backward, every Nock derivation is matched by a C-model run; here one would induct on the height of the derivation, but a derivation of a \textsf{Prop} cannot be eliminated into data, so no height function exists.  The fuel interpreter supplies the measure:  \lstinline[style=inlinecode]{nockF_complete} converts the derivation into a fuel bound and \lstinline[style=inlinecode]{backward_fuel} proceeds by strong induction on that bound, which measures every nested recursion, including the loop refire, uniformly.}
 
 \subsection{Conditional}
 
@@ -326,18 +326,19 @@ The correctness proof remains structural induction, with an additional case spli
 
 \subsection{Loop}
 
-The convention for $\texttt{while}(p_t, p_b)$ is that the test program $p_t$ maps the stack to $\texttt{[flag\ stack']}$, with the flag consumed by the loop; on \lstinline[style=inlinecode]{0} the body $p_b$ executes on $\texttt{stack'}$ and the loop repeats, on \lstinline[style=inlinecode]{1} the loop exits yielding $\texttt{stack'}$, and any other value crashes.  The Nock compilation schema pins a loop core and fires its single arm:\footnote{Obvious infinite loops can be caught by the Vere runtime machinery (\verepr{905}).}
+The convention for $\texttt{while}(p_t, p_b)$ is that the test program $p_t$ maps the stack to $\texttt{[}\textrm{flag}\ S'\texttt{]}$, with the flag consumed by the loop; on \lstinline[style=inlinecode]{0} the body $p_b$ executes on $S'$ and the loop repeats, on \lstinline[style=inlinecode]{1} the loop exits yielding $S'$, and any other value crashes.  The Nock compilation schema pins a loop core and fires its single arm:\footnote{Obvious infinite loops can be caught by the Vere runtime machinery \mbox{(\verepr{905})}.}
 
 \begin{subequations}\label{eqn:classd-while}
   \begin{align}
     \Lambda_N(\texttt{while}(p_t, p_b)) &= \texttt{[8\ [1\ } L \texttt{]\ 9\ 2\ 0\ 1]} \label{eqn:classd-while-outer} \\
-    L &= \texttt{[8\ [7\ [0\ 3]\ } \Lambda_N(p_t) \texttt{]\ [6\ [0\ 4]\ } \notag \\
-      &\qquad \texttt{[9\ 2\ [0\ 6]\ [7\ [0\ 5]\ } \Lambda_N(p_b) \texttt{]]\ [0\ 5]]]} \label{eqn:classd-while-arm}
+    L &= \texttt{[8\ [7\ [0\ 3]\ } \Lambda_N(p_t) \texttt{]\ [6\ [0\ 4]} \notag \\
+      &\qquad \texttt{[9\ 2\ [0\ 6]\ [7\ [0\ 5]\ } \Lambda_N(p_b) \texttt{]]} \notag \\
+      &\qquad \texttt{[0\ 5]]]} \label{eqn:classd-while-arm}
   \end{align}
 \end{subequations}
 
 \noindent
-The axis arithmetic warrants care.  Opcode \lstinline[style=inlinecode]{8} in Equation~\ref{eqn:classd-while-outer} pins $L$, making the subject \lstinline[style=inlinecode]{[$L$ $S$]}, and \lstinline[style=inlinecode]{9 2 0 1} fires the arm on that core.  Within $L$, the stack sits at axis \lstinline[style=inlinecode]{3}, so the inner opcode \lstinline[style=inlinecode]{8} pins $t = \texttt{*[}S\ \Lambda_N(p_t)\texttt{]} = \texttt{[flag\ } S' \texttt{]}$; the subject is now \lstinline[style=inlinecode]{[$t$ $L$ $S$]}, placing the flag at axis \lstinline[style=inlinecode]{4}, $S'$ at axis \lstinline[style=inlinecode]{5}, and $L$ at axis \lstinline[style=inlinecode]{6}.  The opcode \lstinline[style=inlinecode]{6} tests axis \lstinline[style=inlinecode]{4}, crashing on a non-loobean exactly as in the conditional schema.  The exit branch \lstinline[style=inlinecode]{[0 5]} returns $S'$.  The continue branch rebuilds the core by autocons---head \lstinline[style=inlinecode]{[0 6]} recovers $L$, tail \texttt{[7 [0 5] $\Lambda_N(p_b)$]} computes the new stack from $S'$---and \lstinline[style=inlinecode]{9 2} fires the rebuilt core.  The C schema is the evident loop:
+The axis arithmetic warrants care.  Opcode \lstinline[style=inlinecode]{8} in Equation~\ref{eqn:classd-while-outer} pins $L$, making the subject \lstinline[style=inlinecode,mathescape]{[$L$ $S$]}, and \lstinline[style=inlinecode]{9 2 0 1} fires the arm on that core.  Within $L$, the stack sits at axis \lstinline[style=inlinecode]{3}, so the inner opcode \lstinline[style=inlinecode]{8} pins $t = \texttt{*[}S\ \Lambda_N(p_t)\texttt{]} = \texttt{[flag\ } S' \texttt{]}$; the subject is now \lstinline[style=inlinecode,mathescape]{[$t$ $L$ $S$]}, placing the flag at axis \lstinline[style=inlinecode]{4}, $S'$ at axis \lstinline[style=inlinecode]{5}, and $L$ at axis \lstinline[style=inlinecode]{6}.  The opcode \lstinline[style=inlinecode]{6} tests axis \lstinline[style=inlinecode]{4}, crashing on a non-loobean exactly as in the conditional schema.  The exit branch \lstinline[style=inlinecode]{[0 5]} returns $S'$.  The continue branch rebuilds the core by autocons---head \lstinline[style=inlinecode]{[0 6]} recovers $L$, tail \texttt{[7 [0 5] $\Lambda_N(p_b)$]} computes the new stack from $S'$---and \lstinline[style=inlinecode]{9 2} fires the rebuilt core.  The C schema is the evident loop:
 
 \begin{lstlisting}[style=listingcode_c]
 for (;;) {
@@ -360,7 +361,7 @@ In summary, sequencing and \lstinline[style=inlinecode]{ifte} extend the structu
 
 \subsection{Runtime Code}
 
-$\Lambda$ is a line of language design drawn around Nock opcode \lstinline[style=inlinecode]{2}.  Compile-time control preserves intact co-derivation because the source of truth is the program tree with both compilers as initial-algebra homomorphisms.  Beyond Class D lies runtime code-as-data: quotations on the stack executed via Nock opcode \lstinline[style=inlinecode]{2}.  The C backend necessarily faces code that it cannot see at compile time.  The options are to interpret it (which is correct but has the performance profile of direct derivation, effectively rebuilding the Nock interpreter inside the jet) or to \textsc{jit} it under verification (a verified compiler executing at runtime, which is the full hard direct-derivation problem).  Co-derivation's economy is coextensive with the \lstinline[style=inlinecode]{eval}-free fragment, and the \textsc{ski} development's ``fragment boundary'' reappears here as a language-design line rather than an expressivity observation.\footnote{See \patp{lagrev-nocfep}, ``Representing the SKI Combinator Calculus in the Nock Instruction Set Architecture,'' \emph{Urbit Systems Technical Journal} volume 3 issue 2, pp.~23--44.}  The pipeline is not total:  code outside of $\Lambda$ is not forbidden, but simply interpreted.\footnote{\textsc{ans} Forth control words (\texttt{IF}, \texttt{THEN}, \texttt{ELSE}, \texttt{BEGIN}, \texttt{UNTIL}, etc.) are compile-time immediate words which lay down branch targets resolved at compile time, rather than Joy/Factor-style runtime quotations.  Thus the concatenative tradition split along exactly this line, and the half that shipped standards chose the side the proof needs \citep{dpans94}.}
+$\Lambda$ is a line of language design drawn around Nock opcode \lstinline[style=inlinecode]{2}.  Compile-time control preserves intact co-derivation because the source of truth is the program tree with both compilers as initial-algebra homomorphisms.  Beyond Class D lies runtime code-as-data: quotations on the stack executed via Nock opcode \lstinline[style=inlinecode]{2}.  The C backend necessarily faces code that it cannot see at compile time.  The options are to interpret it (which is correct but has the performance profile of direct derivation, effectively rebuilding the Nock interpreter inside the jet) or to \textsc{jit} it under verification (a verified compiler executing at runtime, which is the full hard direct-derivation problem).  Co-derivation's economy is coextensive with the \lstinline[style=inlinecode]{eval}-free fragment, and the \textsc{ski} development's ``fragment boundary'' reappears here as a language-design line rather than an expressivity observation.\footnote{See \patp{lagrev-nocfep}, ``Representing the SKI Combinator Calculus in the Nock Instruction Set Architecture,'' \emph{Urbit Systems Technical Journal} volume 3 issue 2, pp.~23--44.}  The pipeline is not total:  code outside of $\Lambda$ is not forbidden, but simply interpreted.\footnote{\textsc{ans} Forth control words (\texttt{IF}, \texttt{THEN}, \texttt{ELSE}, \texttt{BEGIN}, \texttt{UNTIL}, etc.) are compile-time immediate words which lay down branch targets resolved at compile time, rather than Joy/Factor-style runtime quotations.  This is thus the exact seam along which the concatenative tradition split; the half that shipped standards chose the side the proof needs \citep{dpans94}.}
 
 \section{Deployment and Dispatch}
 
@@ -372,13 +373,13 @@ At this point, we have two compilers $\Lambda_N$ ($\Lambda$ to Nock \textsc{isa}
 \end{enumerate}
 
 \noindent
-This forces a layout question we have until now deferred.  $\Lambda$'s convention is that \lstinline[style=inlinecode]{S = [top rest]}, but Vere dispatches on cores \lstinline[style=inlinecode]{[battery payload]}, with the arm fired via Nock opcode \lstinline[style=inlinecode]{9} and the gate sample at axis \lstinline[style=inlinecode]{6}.  $\Lambda_N$'s output must be packaged in order to emit a one-armed core whose arm body is the composed formula lifted from gate convention to stack convention and back.  A mechanical shim builds an initial stack from the sample, runs the pipeline, and returns the top:  the arm is \texttt{[7 [[0 6] [1 0]] [7 $\Lambda_N(p)$ [0 2]]]}, loop-free plumbing (opcodes \lstinline[style=inlinecode]{0} and \lstinline[style=inlinecode]{1}, one autocons, and two \lstinline[style=inlinecode]{7}s) that adds no proof obligation beyond its own lemmas.  The companion artifact proves that the packaged core agrees with the C side on values, crashes, and divergence (\lstinline[style=inlinecode]{gate_term}, \lstinline[style=inlinecode]{gate_diverges}), and that its battery is the arm itself, a function of the program alone (\lstinline[style=inlinecode]{gate_battery}); a program with named definitions packages and verifies the same way (\lstinline[style=inlinecode]{gate_program}).  The C side's load must implement the same shim, including a crash when the final stack is empty, or harness contract (ii)'s bijection is between the wrong states.
+This forces a layout question we have until now deferred.  $\Lambda$'s convention is that $S = \texttt{[}\textrm{top}\ \textrm{rest}\texttt{]}$, but Vere dispatches on cores \lstinline[style=inlinecode]{[battery payload]}, with the arm fired via Nock opcode \lstinline[style=inlinecode]{9} and the gate sample at axis \lstinline[style=inlinecode]{6}.  $\Lambda_N$'s output must be packaged in order to emit a one-armed core whose arm body is the composed formula lifted from gate convention to stack convention and back.  A mechanical shim builds an initial stack from the sample, runs the pipeline, and returns the top:  the arm is \texttt{[7 [[0 6] [1 0]] [7 $\Lambda_N(p)$ [0 2]]]}, loop-free plumbing (opcodes \lstinline[style=inlinecode]{0} and \lstinline[style=inlinecode]{1}, one autocons, and two \lstinline[style=inlinecode]{7}s) that adds no proof obligation beyond its own lemmas.  The companion artifact proves that the packaged core agrees with the C side on values, crashes, and divergence (\lstinline[style=inlinecode]{gate_term}, \lstinline[style=inlinecode]{gate_diverges}), and that its battery is the arm itself, a function of the program alone (\lstinline[style=inlinecode]{gate_battery}); a program with named definitions packages and verifies the same way (\lstinline[style=inlinecode]{gate_program}).  The C side's load must implement the same shim, including a crash when the final stack is empty, or harness contract (ii)'s bijection is between the wrong states.
 
 There are thus three possible scenarios for deployment of the co-derived C output:
 
 \begin{enumerate}
   \item  $\Lambda$ replaces the source of jetted arms.  The $\Lambda$-emitted core (battery, \lstinline[style=inlinecode]{%fast} hint, \lstinline[style=inlinecode]{%wild} hint, etc.) ships in the kernel source; the C output registers against \emph{that} battery.  Battery identity holds by construction since both artifacts result from the same fold.  No proof relating $\Lambda$'s output to anything else is necessary, because there is nothing else.  This yields the strongest $\mathcal{O}(1)$ claim.
-  \item  $\Lambda$ output must match existing Hoon-compiled batteries.  Hoon's compiler output is not canonical across compiler versions, and proving $\Lambda$'s \lstinline[style=inlinecode]{F} to be noun-identical to Hoon's \lstinline[style=inlinecode]{F} per arm is a per-jet obligation, which the pipeline was hopeful to eliminate.
+  \item  $\Lambda$ output must match existing Hoon-compiled batteries.  Hoon's compiler output is not canonical across compiler versions, and proving $\Lambda$'s $F$ to be noun-identical to Hoon's $F$ per arm is a per-jet obligation, which the pipeline was hopeful to eliminate.
   \item  A new runtime jet dashboard designs dispatch around $\Lambda$ from the start without incumbency constraints.
 \end{enumerate}
 

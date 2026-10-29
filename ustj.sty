@@ -25,16 +25,20 @@
 \usepackage{mathspec}
 %\setmathtt[Scale=MatchLowercase]{Urbit Sans Mono TT SemiBold}
 %\setmathtt[Scale=MatchLowercase]{UrbitSansMonoAx-SemiBold.otf}  % "Ax" cut
-\setmathtt[Scale=MatchLowercase]{UrbitSansMonoBar-SemiBold.otf}  % "Bar" cut
+\setmathtt[Scale=MatchLowercase,Ligatures=NoCommon]{UrbitSansMonoBar-SemiBold.otf}  % "Bar" cut
 \usepackage[osf]{libertineRoman}
 %\newfontfamily\monofont{Urbit Sans Mono TT SemiBold}[
 %  Scale=MatchLowercase,
 %  % BoldFont=Urbit Sans Mono TT Light,
 %  ]
 %\newfontfamily\monofont{UrbitSansMonoAx-SemiBold.otf}[Scale=MatchLowercase]   % "Ax" cut
-\newfontfamily\monofont{UrbitSansMonoBar-SemiBold.otf}[Scale=MatchLowercase]  % "Bar" cut
+% Ligatures=NoCommon: the Bar cut's fi/fl ligature glyphs have broken advances
+\newfontfamily\monofont{UrbitSansMonoBar-SemiBold.otf}[Scale=MatchLowercase,Ligatures=NoCommon]  % "Bar" cut
 \renewcommand{\setmonofont}{\monofont}
-\renewcommand{\texttt}[1]{{\monofont #1}}
+% Math-safe: a bare font switch is a no-op inside math mode, so wrap in
+% \text there. Lets Nock literals in equations mix \texttt{[7\ } with
+% math variables and still come out in Urbit Sans Mono.
+\renewcommand{\texttt}[1]{\ifmmode\text{{\monofont #1}}\else{\monofont #1}\fi}
 % Define a new font family for small caps with FakeSlant
 \newfontfamily\slantedsmallcapsfont{Libertinus Serif}[
     FakeSlant = 0.1 % Adjust the slant amount as needed
