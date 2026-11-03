@@ -38,7 +38,7 @@
 % Math-safe: a bare font switch is a no-op inside math mode, so wrap in
 % \text there. Lets Nock literals in equations mix \texttt{[7\ } with
 % math variables and still come out in Urbit Sans Mono.
-\renewcommand{\texttt}[1]{\ifmmode\text{{\monofont #1}}\else{\monofont #1}\fi}
+\protected\def\texttt#1{\ifmmode\text{{\monofont #1}}\else{\monofont #1}\fi}
 % Define a new font family for small caps with FakeSlant
 \newfontfamily\slantedsmallcapsfont{Libertinus Serif}[
     FakeSlant = 0.1 % Adjust the slant amount as needed
